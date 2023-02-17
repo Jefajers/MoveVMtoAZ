@@ -13,7 +13,7 @@ param (
 	$zone,
 	[switch]
 	[Parameter(Mandatory = $false)]
-    $execute
+	$execute
 )
 
 # Check Az
