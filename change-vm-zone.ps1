@@ -14,7 +14,6 @@ param (
 	[switch]
 	[Parameter(Mandatory = $false)]
     $execute
-	
 )
 
 # Check Az
@@ -29,8 +28,8 @@ Select-AzSubscription -Subscriptionid $subscriptionId
 
 # Get the details of the VM to be moved from Availability Set
 $originalVM = Get-AzVM -ResourceGroupName $resourceGroup -Name $vmName
-if (-not $originalVM.AvailabilitySetReference) {
-	Write-Error "VM not in any AvailabilitySet:$($originalVM.Id)"
+if ($originalVM.Zones) {
+	Write-Error "VM already in a Zone:$($originalVM.Id)"
 	throw
 }
 
