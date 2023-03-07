@@ -13,8 +13,13 @@ param (
 	$zone,
 	[switch]
 	[Parameter(Mandatory = $false)]
-	$execute
+	$execute,
+	[Parameter(Mandatory = $true)]
+	[System.IO.FileInfo]$logPath
 )
+
+# Create Timer
+$stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 # Check Az
 $access = Get-AzContext
@@ -26,15 +31,49 @@ if (-not $access) {
 # Select scope
 Select-AzSubscription -Subscriptionid $subscriptionId
 
-# Get the details of the VM to be moved from Availability Set
+# Get the details of the VM to be converted
 $originalVM = Get-AzVM -ResourceGroupName $resourceGroup -Name $vmName
+if ($originalVM.Location -ne $location) {
+	Write-Error "VM is not in stated target location:$location, instead its located in:$($originalVM.Location)"
+	throw
+}
 if ($originalVM.Zones) {
 	Write-Error "VM already in a Zone:$($originalVM.Id)"
 	throw
 }
+if ($originalVM.NetworkProfile.NetworkInterfaces.DeleteOption -ne 'Detach') {
+	Write-Error "VM NIC DeleteOption set to:$($originalVM.NetworkProfile.NetworkInterfaces.DeleteOption)"
+	throw
+}
+if ($originalVM.StorageProfile.OsDisk.DeleteOption -ne 'Detach') {
+	Write-Error "VM OS disk DeleteOption set to:$($originalVM.StorageProfile.OsDisk.DeleteOption)"
+	throw
+}
+if ($originalVM.StorageProfile.DataDisks) {
+	if ($originalVM.StorageProfile.DataDisks.DeleteOption -ne 'Detach') {
+		Write-Error "VM Data disk DeleteOption set to:$($originalVM.StorageProfile.DataDisks.DeleteOption)"
+		throw
+	}
+}
+
+# Log VM details in file
+if (-not (Test-Path $logpath)) {
+	Write-Error "Cannot find log path:$logpath"
+	throw
+}
+try {
+    # Create File and input data
+    $childPath = $originalVM.Name + '_' + $(Get-Date -f yyyy-MM-dd-HH-mm-ss) + '.json'
+    $useLogPath = Join-Path -Path $logPath -ChildPath $childPath -ErrorAction Stop
+    $originalVM | ConvertTo-Json -Depth 100 | Set-Content -Path $useLogPath -Force -ErrorAction Stop
+}
+catch {
+    Write-Error "Log VM details to file, got error:$_)"
+    throw
+}
 
 if ($execute) {
-    try {
+	try {
 	    # Stop the VM to take snapshot
 	    Stop-AzVM -ResourceGroupName $resourceGroup -Name $vmName -Force -ErrorAction Stop
     }
@@ -113,3 +152,5 @@ if ($execute) {
     # Recreate the VM
     New-AzVM -ResourceGroupName $resourceGroup -Location $originalVM.Location -VM $newVM -DisableBginfoExtension
 }
+$stopWatch.Stop()
+Write-Host "Job for VM: $($originalVM.Name) took:$($stopWatch.Elapsed)"
